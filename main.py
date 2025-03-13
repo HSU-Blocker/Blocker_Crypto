@@ -15,8 +15,13 @@ from security.ecdsa_utils import ECDSAUtils
 from security.sha3_utils import SHA3Utils
 
 # 테스트용 사용자 정보
-USER_ATTRIBUTES = ["ATTR1", "ATTR2", "ATTR4"]
-POLICY = "((ATTR1 and ATTR2) or (ATTR3 and ATTR4))"
+USER_ATTRIBUTES = ["ATTR1", "ATTR2", "ATTR4", 
+"ATTR5", "ATTR6", "ATTR7", "ATTR8", "ATTR9", "ATTR10",
+ "ATTR11", "ATTR12", "ATTR13", "ATTR14", "ATTR15", "ATTR16",
+  "ATTR17", "ATTR18", "ATTR19", "ATTR20", "ATTR21",
+    "ATTR22", "ATTR23", "ATTR24", "ATTR25", "ATTR26",
+  ]
+POLICY = "((ATTR4 and ATTR24) or (ATTR3 and ATTR1))"
 
 # 파일 경로 설정 (main에서 파라미터로 전달)
 ORIGINAL_FILE_PATH = "data/original_data.bin"
@@ -74,7 +79,7 @@ def main():
 
     # 블록체인에서 다운 받은 해시값과 IPFS에서 다운 받은 암호화된 파일의 해시값 비교
     # 일단 IPFS 제외하고 암호화된 파일의 경로를 파라미터로
-    is_match = sha3.verify_sha3_hash(hEbj, ENCRYPTED_AES_FILE_PATH)
+    is_match = sha3.verify_sha3_ENCRYPTED_AES_FILE_PATHhash(hEbj, )
     print(f"IoT 디바이스에서 hEBJ & IPFS에서 다운 받은 파일 해시 값 비교 여부: ", is_match)
     if(is_match == False):
         exit()
