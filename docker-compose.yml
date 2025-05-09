@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  blocker-crypto:
+    platform: linux/amd64
+    build: .
+    container_name: blocker-crypto
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./crypto/keys:/app/crypto/keys
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped

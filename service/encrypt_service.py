@@ -1,66 +1,85 @@
 import os
-import sys
+import base64
 from charm.toolbox.pairinggroup import GT
+from crypto.cpabe.cpabe import CPABETools
+from crypto.symmetric.symmetric import SymmetricCrypto
+from crypto.hash.hash import HashTools
+import pickle
 
-# 현재 경로를 기준으로 crypto 폴더 추가
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+class EncryptService:
+    def __init__(self):
+        # CP-ABE 도구 및 페어링 그룹 초기화
+        self.cpabe = CPABETools()
+        self.group = self.cpabe.get_group()
 
-from crypto.cpabe_init import CPABEInit
-from crypto.aes_encrypt import AESEncrypt
-from crypto.cpabe_encrypt import CPABEEncrypt
+    def generate_keys(self):
+        """
+        CP-ABE 그룹(GT)에서 무작위 AES 대칭 키(kbj)와
+        실제 파일 암호화에 사용할 AES 키를 생성
+        """
+        kbj, aes_key = SymmetricCrypto.generate_key(self.group)
+        return kbj, aes_key
 
-# Es(bj, kbj)
-def encrypt_bj_with_aes(kbj, group, original_file, encrypted_aes_file):
-    """
-    AES 암호화를 수행하고 결과를 저장하는 함수
-    - kbj: GT 그룹에서 생성된 AES 대칭키
-    - group: 페어링 그룹 객체 (CP-ABE와 공유)
-    - original_file: 원본 데이터 파일 경로
-    - encrypted_aes_file: 암호화된 데이터 저장 경로
-    """
-    kbj_bytes = group.serialize(kbj)
-    aes_key = kbj_bytes[:32]  # AES 256-bit (32바이트) 키 생성
+    def encrypt_file_with_aes(self, file_path, encrypted_file_path, aes_key):
+        """
+        파일을 AES 대칭키로 암호화하고,
+        암호화된 파일의 경로와 SHA3 해시값을 반환
+        """
+        encrypted_file_path = SymmetricCrypto.encrypt_file(file_path, encrypted_file_path, aes_key)
+        file_hash = HashTools.sha3_hash_file(encrypted_file_path)
+        return encrypted_file_path, file_hash
 
-    aes = AESEncrypt(aes_key)
-    with open(original_file, "rb") as f:
-        bj_data = f.read()
-    encrypted_bj = aes.encrypt(bj_data)
+    def encrypt_key_with_cpabe(self, kbj, policy, public_key_file, device_secret_key_file):
+        """
+        CP-ABE 공개키와 접근 정책(policy)을 기반으로
+        대칭키(kbj)를 CP-ABE로 암호화
+        """
+        encrypted_key = self.cpabe.encrypt(kbj, policy, public_key_file)
+        
+        os.makedirs(os.path.dirname(device_secret_key_file), exist_ok=True)
+        with open(device_secret_key_file, "wb") as f:
+            pickle.dump(encrypted_key, f)
+        
+        if not encrypted_key:
+            raise Exception("CP-ABE 암호화 실패: encrypted_key가 None입니다.")
+        return encrypted_key.encode()
 
-    AESEncrypt.save_to_file(encrypted_bj, encrypted_aes_file)
+    def generate_device_secret_key(self, policy, public_key_file, master_key_file, device_secret_key_file):
+        """
+        사용자 속성에 따라 디바이스 비밀키를 생성
+        - 키 파일이 없으면 setup 실행
+        - 기존 키 파일이 존재하면 재생성하지 않음
+        """
 
-    print(f"AES 암호화 완료, 저장 위치: {encrypted_aes_file}")
-    return aes_key
+        user_attributes = self.extract_user_attributes(policy)
 
-# Ec(PKc, kbj, SKd)
-def encrypt_kbj_with_cpabe(kbj, policy, cpabe, group, public_key):
-    """CP-ABE를 이용하여 AES 키(kbj)를 암호화하는 함수"""
-    cpabe_encryptor = CPABEEncrypt(cpabe, group, public_key)
-    encrypted_kbj = cpabe_encryptor.encrypt(kbj, policy)
+        if not (os.path.exists(public_key_file) and os.path.exists(master_key_file)):
+            self.cpabe.setup(public_key_file, master_key_file)
 
-    print(f"CP-ABE 암호화된 kbj: {encrypted_kbj}")
-    return encrypted_kbj
+        device_secret_key = self.cpabe.generate_device_secret_key(
+            public_key_file, master_key_file, user_attributes, device_secret_key_file
+        )
+        return device_secret_key
 
-# bj & kbj 암호화 및 암호화된 bj를 파일로 저장
-# 실제로는 암호화된 bj 파일을 IPFS에 업로드 & 암호화된 kbj는 um에 포함하여 블록체인 업로드 필요
-def encrypt_and_store(user_attributes, policy, original_file, encrypted_aes_file):
-    """
-    AES + CP-ABE 암호화를 수행하는 함수
-    - user_attributes: 사용자 속성 리스트
-    - policy: CP-ABE 정책
-    - original_file: 원본 데이터 파일 경로
-    - encrypted_aes_file: 암호화된 데이터 저장 경로
-    """
-    cpabe_init = CPABEInit()
-    cpabe, group, public_key = cpabe_init.get_cpabe_objects()
+    def serialize_element(self, element):
+        """
+        CP-ABE에서 사용하는 pairing.Element 객체를
+        base64로 직렬화하여 문자열로 반환
+        """
+        return base64.b64encode(self.group.serialize(element)).decode()
 
-    # 기존: device_secret_key를 내부에서만 사용 → 변경: 반환하도록 수정
-    device_secret_key = cpabe_init.generate_device_secret_key(user_attributes)
-
-    kbj = group.random(GT)  # GT 그룹 요소로 키 생성
-    print(f"GT 그룹에서 생성된 AES 키(kbj): {kbj}")
-
-    aes_key = encrypt_bj_with_aes(kbj, group, original_file, encrypted_aes_file)
-    encrypted_kbj = encrypt_kbj_with_cpabe(kbj, policy, cpabe, group, public_key)
-
-    # `device_secret_key`를 함께 반환하여 복호화 시 동일한 키 사용 가능
-    return encrypted_kbj, device_secret_key
+    def extract_user_attributes(self, policy_dict):
+        """
+        접근 정책에 사용된 문자열에서 AND/OR, 괄호 등을 제거하여
+        사용자 속성 리스트를 추출 (중복 제거 포함)
+        """
+        import re
+        attributes = []
+        for value in policy_dict.values():
+            if not isinstance(value, str) or not value.strip():
+                continue
+            expr = value.upper().replace("AND", " ").replace("OR", " ")
+            expr = re.sub(r"[()]", " ", expr)
+            tokens = [token.strip() for token in expr.split() if token.strip()]
+            attributes.extend(tokens)
+        return list(set(attributes))  # 중복 제거

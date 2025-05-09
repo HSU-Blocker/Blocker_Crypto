@@ -170,5 +170,5 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-# pem
-pem/manufacture_private_key.pem
+# keys
+crypto/keys
