@@ -29,14 +29,22 @@ api = Api(
 
 ns = api.namespace("crypto", description="암호화 / 복호화 기능")
 
-# 기준 경로 (이 파일이 위치한 디렉토리)
+# 기준 디렉토리
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# .env에서 로드된 상대 경로를 기준으로 절대 경로로 변환
+# 파일 경로
 KEY_DIR = os.path.join(BASE_DIR, os.getenv("KEY_DIR"))
 ORIGINAL_FILE_PATH = os.path.join(BASE_DIR, os.getenv("ORIGINAL_FILE_PATH"))
 ENCRYPTED_FILE_PATH = os.path.join(BASE_DIR, os.getenv("ENCRYPTED_FILE_PATH"))
 DECRYPTED_FILE_PATH = os.path.join(BASE_DIR, os.getenv("DECRYPTED_FILE_PATH"))
+
+# 키 파일 절대 경로
+PUBLIC_KEY_FILE = os.path.join(KEY_DIR, os.getenv("PUBLIC_KEY"))
+MASTER_KEY_FILE = os.path.join(KEY_DIR, os.getenv("MASTER_KEY"))
+DEVICE_SECRET_KEY_FILE = os.path.join(KEY_DIR, os.getenv("DEVICE_SECRET_KEY"))
+ECDSA_PRIVATE_KEY_FILE = os.path.join(KEY_DIR, os.getenv("ECDSA_PRIVATE_KEY"))
+ECDSA_PUBLIC_KEY_FILE = os.path.join(KEY_DIR, os.getenv("ECDSA_PUBLIC_KEY"))
+ENCRYPTED_KEY_FILE = os.path.join(KEY_DIR, os.getenv("ENCRYPTED_KEY_FILE"))
 
 # Swagger용 입력 모델 정의
 encrypt_model = api.model("EncryptRequest", {
@@ -102,10 +110,7 @@ class EncryptAPI(Resource):
             encrypted_path, file_hash = encryptor.encrypt_file_with_aes(ORIGINAL_FILE_PATH, ENCRYPTED_FILE_PATH, aes_key)
 
             # 5. CP-ABE로 대칭 키(kbj)를 암호화 (접근 정책 기반)
-            public_key_file = os.path.join(KEY_DIR, "public_key.bin")
-            master_key_file = os.path.join(KEY_DIR, "master_key.bin")
-            device_secret_key_file = os.path.join(KEY_DIR, "device_secret_key.bin")
-            encrypted_key = encryptor.encrypt_key_with_cpabe(kbj, policy, public_key_file, device_secret_key_file)
+            encrypted_key = encryptor.encrypt_key_with_cpabe(kbj, policy, PUBLIC_KEY_FILE, DEVICE_SECRET_KEY_FILE)
             logger.info(
                 f"CP-ABE로 대칭키 암호화 완료, encrypted_key: {encrypted_key} ... (type={type(encrypted_key)})"
             ) 
@@ -113,15 +118,12 @@ class EncryptAPI(Resource):
             if not encrypted_key:
                 raise Exception("CP-ABE 암호화 실패: encrypted_key가 None입니다.")
             
-            # encrypted_key 저장 경로 설정
-            encrypted_key_path = os.path.join(KEY_DIR, "encrypted_key.bin")
-
             # 암호화된 키를 바이너리 파일로 저장
-            with open(encrypted_key_path, "wb") as f:
+            with open(ENCRYPTED_KEY_FILE, "wb") as f:
                 f.write(encrypted_key)  # 이미 bytes 타입
 
             # 6. 디바이스용 속성 기반 개인키(SKd) 생성
-            encryptor.generate_device_secret_key(policy_dict, public_key_file, master_key_file, device_secret_key_file)
+            encryptor.generate_device_secret_key(policy_dict, PUBLIC_KEY_FILE, MASTER_KEY_FILE, DEVICE_SECRET_KEY_FILE)
 
             # 7. 서명 생성
             ecdsa_private_key_path = os.path.join(KEY_DIR, "ecdsa_private_key.pem")
@@ -171,8 +173,7 @@ class DecryptAPI(Resource):
         """AES + CP-ABE 복호화"""
         try:
             # 1. 요청에서 해시값 추출 및 암호화된 키를 바이너리 파일에서 읽기
-            encrypted_key_path = os.path.join(KEY_DIR, "encrypted_key.bin")
-            with open(encrypted_key_path, "rb") as f:
+            with open(ENCRYPTED_KEY_FILE, "rb") as f:
                 encrypted_key_bytes = f.read()
 
             # 1. bytes → str
